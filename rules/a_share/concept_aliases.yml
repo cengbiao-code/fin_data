@@ -1,0 +1,33 @@
+market: a_share
+concepts:
+  cash_and_cash_equivalents:
+    confidence: 0.98
+    aliases:
+      - 货币资金
+      - 现金及现金等价物
+  total_assets:
+    confidence: 0.99
+    aliases:
+      - 资产总计
+      - 资产合计
+  total_liabilities:
+    confidence: 0.99
+    aliases:
+      - 负债合计
+  total_equity:
+    confidence: 0.99
+    aliases:
+      - 所有者权益合计
+      - 股东权益合计
+  revenue:
+    confidence: 0.98
+    aliases:
+      - 营业收入
+  net_profit:
+    confidence: 0.98
+    aliases:
+      - 净利润
+  net_cash_flow_from_operating:
+    confidence: 0.98
+    aliases:
+      - 经营活动产生的现金流量净额

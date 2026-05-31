@@ -1,0 +1,14 @@
+market: us
+note_roles:
+  note.revenue_by_product:
+    include:
+      - by product
+      - product line
+  note.revenue_by_region:
+    include:
+      - by region
+      - geographical
+  note.customer_concentration:
+    include:
+      - major customers
+      - customer concentration

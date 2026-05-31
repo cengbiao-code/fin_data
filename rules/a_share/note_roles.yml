@@ -1,0 +1,14 @@
+market: a_share
+note_roles:
+  note.revenue_by_product:
+    include:
+      - 主营业务分产品
+      - 分产品
+  note.revenue_by_region:
+    include:
+      - 主营业务分地区
+      - 分地区
+  note.customer_concentration:
+    include:
+      - 前五名客户
+      - 前五大客户

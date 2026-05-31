@@ -1,0 +1,28 @@
+market: hk
+statement_titles:
+  statement.balance_sheet:
+    include:
+      - consolidated statement of financial position
+      - consolidated balance sheet
+      - 綜合財務狀況表
+      - 綜合資產負債表
+    exclude:
+      - company statement of financial position
+      - 公司財務狀況表
+  statement.income_statement:
+    include:
+      - consolidated statement of profit or loss
+      - consolidated income statement
+      - 綜合損益表
+      - 綜合收益表
+  statement.cash_flow:
+    include:
+      - consolidated statement of cash flows
+      - 綜合現金流量表
+scope_keywords:
+  consolidated:
+    - consolidated
+    - 綜合
+  parent:
+    - company
+    - 公司

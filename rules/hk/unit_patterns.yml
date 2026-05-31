@@ -1,0 +1,25 @@
+market: hk
+currency_patterns:
+  HKD:
+    - 港元
+    - 港幣
+    - HKD
+    - HK$
+  CNY:
+    - 人民币
+    - RMB
+    - CNY
+  USD:
+    - 美元
+    - US dollars
+    - USD
+    - US$
+scale_patterns:
+  1:
+    - dollars
+  1000:
+    - HKD thousands
+    - in thousands
+  1000000:
+    - million
+    - in millions

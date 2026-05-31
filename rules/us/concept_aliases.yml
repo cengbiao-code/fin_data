@@ -1,0 +1,34 @@
+market: us
+concepts:
+  cash_and_cash_equivalents:
+    confidence: 0.98
+    aliases:
+      - cash and cash equivalents
+      - cash and bank balances
+  total_assets:
+    confidence: 0.99
+    aliases:
+      - total assets
+  total_liabilities:
+    confidence: 0.99
+    aliases:
+      - total liabilities
+  total_equity:
+    confidence: 0.99
+    aliases:
+      - total stockholders' equity
+      - total shareholders' equity
+  revenue:
+    confidence: 0.98
+    aliases:
+      - revenue
+      - net sales
+  net_profit:
+    confidence: 0.98
+    aliases:
+      - net income
+      - net earnings
+  net_cash_flow_from_operating:
+    confidence: 0.98
+    aliases:
+      - net cash provided by operating activities
