@@ -37,9 +37,9 @@
 
 ## 相关规格
 
-- [MVP 数据 Schema 规格](../specs/mvp-data-schema.md)
-- [MVP 规则包与校验接口规格](../specs/mvp-rule-packs.md)
-- [MVP Review Workbook 规格](../specs/mvp-review-workbook.md)
+- [MVP 数据 Schema 规格](specs/data-schema.md)
+- [MVP 规则包与校验接口规格](specs/rule-packs.md)
+- [MVP Review Workbook 规格](specs/review-workbook.md)
 
 ## 架构
 
