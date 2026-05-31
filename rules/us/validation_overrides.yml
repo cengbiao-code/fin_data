@@ -1,0 +1,11 @@
+market: us
+tolerance:
+  absolute_tolerance_display_units: 2
+  relative_tolerance: 0.0001
+rules:
+  balance_sheet.assets_equal_liabilities_plus_equity:
+    enabled: true
+    severity: error
+  cash_flow.ending_cash_reconciliation:
+    enabled: true
+    severity: warning

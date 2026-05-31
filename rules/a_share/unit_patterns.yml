@@ -1,0 +1,17 @@
+market: a_share
+currency_patterns:
+  CNY:
+    - 人民币
+    - RMB
+    - CNY
+scale_patterns:
+  1:
+    - 元
+  1000:
+    - 千元
+    - 人民币千元
+  10000:
+    - 万元
+    - 人民币万元
+  1000000:
+    - 百万元

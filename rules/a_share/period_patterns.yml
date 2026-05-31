@@ -1,0 +1,13 @@
+market: a_share
+period_patterns:
+  point_in_time:
+    - 期末余额
+    - 期初余额
+  cumulative:
+    - 本期金额
+    - 上期金额
+    - 年初至报告期末
+  single_period:
+    - 本季度
+  comparative:
+    - 上年同期

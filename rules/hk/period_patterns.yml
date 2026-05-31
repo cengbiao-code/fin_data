@@ -1,0 +1,15 @@
+market: hk
+period_patterns:
+  point_in_time:
+    - as of
+    - at
+  cumulative:
+    - six months ended
+    - nine months ended
+    - year ended
+  single_period:
+    - three months ended
+    - quarter ended
+  comparative:
+    - prior period
+    - comparative

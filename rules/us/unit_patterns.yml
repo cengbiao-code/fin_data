@@ -1,0 +1,15 @@
+market: us
+currency_patterns:
+  USD:
+    - US dollars
+    - USD
+    - US$
+scale_patterns:
+  1:
+    - dollars
+  1000:
+    - USD thousands
+    - in thousands
+  1000000:
+    - million
+    - in millions

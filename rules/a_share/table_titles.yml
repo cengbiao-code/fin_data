@@ -1,0 +1,33 @@
+market: a_share
+statement_titles:
+  statement.balance_sheet:
+    include:
+      - 合并资产负债表
+      - 资产负债表
+    prefer:
+      - 合并资产负债表
+    exclude:
+      - 母公司资产负债表
+      - 公司资产负债表
+  statement.income_statement:
+    include:
+      - 合并利润表
+      - 利润表
+    prefer:
+      - 合并利润表
+    exclude:
+      - 母公司利润表
+  statement.cash_flow:
+    include:
+      - 合并现金流量表
+      - 现金流量表
+    prefer:
+      - 合并现金流量表
+    exclude:
+      - 母公司现金流量表
+scope_keywords:
+  consolidated:
+    - 合并
+  parent:
+    - 母公司
+    - 公司

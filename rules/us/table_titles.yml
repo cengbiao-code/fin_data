@@ -1,0 +1,21 @@
+market: us
+statement_titles:
+  statement.balance_sheet:
+    include:
+      - consolidated balance sheets
+      - consolidated statements of financial position
+    exclude:
+      - parent company
+  statement.income_statement:
+    include:
+      - consolidated statements of operations
+      - consolidated statements of income
+      - consolidated statements of earnings
+  statement.cash_flow:
+    include:
+      - consolidated statements of cash flows
+scope_keywords:
+  consolidated:
+    - consolidated
+  parent:
+    - parent company

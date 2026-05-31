@@ -1,0 +1,37 @@
+market: hk
+concepts:
+  cash_and_cash_equivalents:
+    confidence: 0.98
+    aliases:
+      - 現金及現金等價物
+      - cash and cash equivalents
+      - bank balances and cash
+  total_assets:
+    confidence: 0.99
+    aliases:
+      - 資產總值
+      - total assets
+  total_liabilities:
+    confidence: 0.99
+    aliases:
+      - 負債總額
+      - total liabilities
+  total_equity:
+    confidence: 0.99
+    aliases:
+      - 權益總額
+      - total equity
+  revenue:
+    confidence: 0.98
+    aliases:
+      - revenue
+      - 收入
+  net_profit:
+    confidence: 0.98
+    aliases:
+      - profit for the year
+      - 年內溢利
+  net_cash_flow_from_operating:
+    confidence: 0.98
+    aliases:
+      - net cash generated from operating activities
