@@ -1,5 +1,6 @@
 import sqlite3
 
+from fin_report_extractor.extractors import ExtractedCell, ExtractedTable
 from fin_report_extractor.cli import main
 
 
@@ -86,3 +87,68 @@ def test_import_pdf_registers_report_with_metadata(tmp_path, capsys):
         2025,
         "annual",
     )
+
+
+def test_extract_tables_persists_raw_tables_for_registered_report(
+    tmp_path, capsys, monkeypatch
+):
+    audit_db = tmp_path / "db" / "audit.sqlite"
+    pdf = tmp_path / "annual-report.pdf"
+    pdf.write_bytes(b"%PDF-1.4 annual report\n")
+
+    main(
+        [
+            "import-pdf",
+            str(pdf),
+            "--audit-db",
+            str(audit_db),
+            "--stored-pdf-path",
+            str(pdf),
+            "--market",
+            "a_share",
+        ]
+    )
+    report_id = capsys.readouterr().out.strip()
+
+    class FakeExtractor:
+        extractor_name = "pdfplumber"
+
+        def extract_tables(self, pdf_path):
+            assert pdf_path == pdf
+            return [
+                ExtractedTable(
+                    extractor_name="pdfplumber",
+                    page_number=1,
+                    table_index_on_page=0,
+                    bbox_json="[0, 0, 10, 10]",
+                    cells=[
+                        ExtractedCell(0, 0, "项目", None, 1),
+                        ExtractedCell(0, 1, "金额", None, 1),
+                    ],
+                    quality={},
+                )
+            ]
+
+    monkeypatch.setattr(
+        "fin_report_extractor.cli.PdfPlumberExtractor",
+        lambda: FakeExtractor(),
+    )
+
+    main(["extract-tables", report_id, "--audit-db", str(audit_db)])
+
+    output = capsys.readouterr().out
+    assert "extraction_run_id=" in output
+    assert "tables=1" in output
+    assert "cells=2" in output
+
+    conn = sqlite3.connect(audit_db)
+    try:
+        run_count = conn.execute("select count(*) from extraction_runs").fetchone()[0]
+        table_count = conn.execute("select count(*) from raw_tables").fetchone()[0]
+        cell_count = conn.execute("select count(*) from raw_cells").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert run_count == 1
+    assert table_count == 1
+    assert cell_count == 2

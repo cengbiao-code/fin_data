@@ -5,6 +5,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from fin_report_extractor.audit_db import connect_audit_db, initialize_audit_db
+from fin_report_extractor.extraction_runs import extract_tables_for_report
+from fin_report_extractor.extractors import PdfPlumberExtractor
 from fin_report_extractor.import_pdf import register_pdf
 
 
@@ -50,6 +52,27 @@ def _import_pdf(args: argparse.Namespace) -> None:
     print(report_id)
 
 
+def _extract_tables(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        summary = extract_tables_for_report(
+            conn,
+            args.report_id,
+            extractor=PdfPlumberExtractor(),
+        )
+    finally:
+        conn.close()
+
+    print(
+        f"extraction_run_id={summary.extraction_run_id} "
+        f"tables={summary.table_count} cells={summary.cell_count}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin-report")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -69,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
     import_pdf.add_argument("--fiscal-year", type=int)
     import_pdf.add_argument("--report-type")
     import_pdf.set_defaults(func=_import_pdf)
+
+    extract_tables = subparsers.add_parser("extract-tables")
+    extract_tables.add_argument("report_id")
+    extract_tables.add_argument("--audit-db", default="data/db/audit.sqlite")
+    extract_tables.set_defaults(func=_extract_tables)
 
     return parser
 

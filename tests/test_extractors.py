@@ -63,18 +63,70 @@ def test_table_extractor_base_method_requires_adapter_implementation(tmp_path):
 
 
 def test_stub_extractors_fail_clearly_until_real_extraction_is_implemented():
-    adapters = [
-        (PdfPlumberExtractor(), "pdfplumber"),
-        (CamelotExtractor(), "camelot"),
-    ]
+    extractor = CamelotExtractor()
 
-    for extractor, expected_name in adapters:
-        assert extractor.extractor_name == expected_name
-        try:
-            extractor.extract_tables(Path("sample.pdf"))
-        except NotImplementedError as exc:
-            message = str(exc)
-            assert expected_name in message.lower()
-            assert "implemented after" in message
-        else:
-            raise AssertionError(f"Expected {expected_name} stub to fail clearly.")
+    assert extractor.extractor_name == "camelot"
+    try:
+        extractor.extract_tables(Path("sample.pdf"))
+    except NotImplementedError as exc:
+        message = str(exc)
+        assert "camelot" in message.lower()
+        assert "implemented after" in message
+    else:
+        raise AssertionError("Expected camelot stub to fail clearly.")
+
+
+def test_pdfplumber_extractor_reads_tables_from_pdf(monkeypatch, tmp_path):
+    class FakeTable:
+        bbox = (1, 2, 30, 40)
+        cells = [
+            (1, 2, 10, 12),
+            (10, 2, 30, 12),
+            (1, 12, 10, 20),
+            None,
+        ]
+
+        def extract(self):
+            return [
+                ["项目", "金额"],
+                ["资产总计", ""],
+            ]
+
+    class FakePage:
+        page_number = 5
+
+        def find_tables(self):
+            return [FakeTable()]
+
+    class FakePdf:
+        pages = [FakePage()]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def fake_open(pdf_path):
+        assert pdf_path == tmp_path / "sample.pdf"
+        return FakePdf()
+
+    import fin_report_extractor.extractors.pdfplumber_extractor as module
+
+    monkeypatch.setattr(module.pdfplumber, "open", fake_open)
+
+    tables = PdfPlumberExtractor().extract_tables(tmp_path / "sample.pdf")
+
+    assert len(tables) == 1
+    table = tables[0]
+    assert table.extractor_name == "pdfplumber"
+    assert table.page_number == 5
+    assert table.table_index_on_page == 0
+    assert table.bbox_json == "[1, 2, 30, 40]"
+    assert table.quality == {"table_method": "pdfplumber.find_tables"}
+    assert table.cells == [
+        ExtractedCell(0, 0, "项目", "[1, 2, 10, 12]", 5),
+        ExtractedCell(0, 1, "金额", "[10, 2, 30, 12]", 5),
+        ExtractedCell(1, 0, "资产总计", "[1, 12, 10, 20]", 5),
+        ExtractedCell(1, 1, None, None, 5),
+    ]
