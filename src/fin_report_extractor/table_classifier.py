@@ -46,7 +46,31 @@ def _get_run_context(conn: Connection, extraction_run_id: str) -> tuple[str, str
     return str(row[0]), str(row[1])
 
 
-def _table_text(conn: Connection, raw_table_id: str, raw_table_text: str | None) -> str:
+def _page_text_sample(
+    conn: Connection,
+    report_id: str,
+    page_number: int,
+) -> str | None:
+    row = conn.execute(
+        """
+        select page_text_sample
+        from pdf_pages
+        where report_id = ? and page_number = ?
+        """,
+        (report_id, page_number),
+    ).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+def _table_text(
+    conn: Connection,
+    report_id: str,
+    raw_table_id: str,
+    raw_table_text: str | None,
+    page_number: int,
+) -> str:
     cell_text = "\n".join(
         str(row[0])
         for row in conn.execute(
@@ -59,7 +83,15 @@ def _table_text(conn: Connection, raw_table_id: str, raw_table_text: str | None)
             (raw_table_id,),
         ).fetchall()
     )
-    return "\n".join(part for part in [raw_table_text, cell_text] if part)
+    return "\n".join(
+        part
+        for part in [
+            _page_text_sample(conn, report_id, page_number),
+            raw_table_text,
+            cell_text,
+        ]
+        if part
+    )
 
 
 def _contains_keyword(text: str, keyword: str) -> bool:
@@ -127,12 +159,12 @@ def classify_tables_for_run(
     *,
     rules_root: Path,
 ) -> TableClassificationSummary:
-    _report_id, market = _get_run_context(conn, extraction_run_id)
+    report_id, market = _get_run_context(conn, extraction_run_id)
     rule_pack = load_market_rule_pack(rules_root, market)
 
     raw_tables = conn.execute(
         """
-        select raw_table_id, raw_table_text
+        select raw_table_id, raw_table_text, page_number
         from raw_tables
         where extraction_run_id = ?
         order by page_number, table_index_on_page
@@ -143,10 +175,16 @@ def classify_tables_for_run(
     classifications = [
         _classify_raw_table(
             str(raw_table_id),
-            _table_text(conn, str(raw_table_id), raw_table_text),
+            _table_text(
+                conn,
+                report_id,
+                str(raw_table_id),
+                raw_table_text,
+                int(page_number),
+            ),
             rule_pack.table_titles,
         )
-        for raw_table_id, raw_table_text in raw_tables
+        for raw_table_id, raw_table_text, page_number in raw_tables
     ]
 
     conn.execute(

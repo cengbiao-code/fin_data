@@ -123,6 +123,73 @@ def test_classify_tables_for_run_replaces_existing_classifications(tmp_path):
         conn.close()
 
 
+def test_classify_tables_for_run_uses_page_text_when_title_is_outside_grid(tmp_path):
+    conn, report_id, run_id = _setup_run(tmp_path, market="us")
+    try:
+        conn.execute(
+            """
+            insert into pdf_pages (
+              page_id, report_id, page_number, width, height, text_char_count,
+              text_density, has_statement_keywords, page_text_sample
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "page-1",
+                report_id,
+                1,
+                595.0,
+                842.0,
+                120,
+                0.0002,
+                1,
+                "Consolidated Balance Sheets\nLine item\nAmount",
+            ),
+        )
+        persist_raw_tables(
+            conn,
+            report_id,
+            run_id,
+            [
+                ExtractedTable(
+                    extractor_name="pdfplumber",
+                    page_number=1,
+                    table_index_on_page=0,
+                    bbox_json=None,
+                    cells=[
+                        ExtractedCell(0, 0, "Line item", None, 1),
+                        ExtractedCell(0, 1, "Amount", None, 1),
+                        ExtractedCell(1, 0, "Total assets", None, 1),
+                        ExtractedCell(1, 1, "100", None, 1),
+                    ],
+                    quality={},
+                )
+            ],
+        )
+
+        summary = classify_tables_for_run(conn, run_id, rules_root=Path("rules"))
+
+        assert summary.classified_count == 1
+        assert summary.review_required_count == 1
+
+        row = conn.execute(
+            """
+            select table_role, statement_scope, classification_confidence,
+                   classification_rule_id, requires_review
+            from classified_tables
+            """
+        ).fetchone()
+
+        assert row == (
+            "statement.balance_sheet",
+            "consolidated",
+            0.85,
+            "table_titles.statement.balance_sheet.include",
+            1,
+        )
+    finally:
+        conn.close()
+
+
 def test_classify_tables_cli_writes_classifications(tmp_path, capsys):
     from fin_report_extractor.cli import main
 
