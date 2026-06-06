@@ -169,7 +169,7 @@ def test_classify_tables_for_run_uses_page_text_when_title_is_outside_grid(tmp_p
         summary = classify_tables_for_run(conn, run_id, rules_root=Path("rules"))
 
         assert summary.classified_count == 1
-        assert summary.review_required_count == 1
+        assert summary.review_required_count == 0
 
         row = conn.execute(
             """
@@ -182,9 +182,43 @@ def test_classify_tables_for_run_uses_page_text_when_title_is_outside_grid(tmp_p
         assert row == (
             "statement.balance_sheet",
             "consolidated",
-            0.85,
-            "table_titles.statement.balance_sheet.include",
-            1,
+            0.95,
+            "table_titles.statement.balance_sheet.prefer",
+            0,
+        )
+    finally:
+        conn.close()
+
+
+def test_classify_tables_for_run_prefers_hk_consolidated_statement_title(tmp_path):
+    conn, report_id, run_id = _setup_run(tmp_path, market="hk")
+    try:
+        persist_raw_tables(
+            conn,
+            report_id,
+            run_id,
+            [_table("Consolidated statement of financial position")],
+        )
+
+        summary = classify_tables_for_run(conn, run_id, rules_root=Path("rules"))
+
+        assert summary.classified_count == 1
+        assert summary.review_required_count == 0
+
+        row = conn.execute(
+            """
+            select table_role, statement_scope, classification_confidence,
+                   classification_rule_id, requires_review
+            from classified_tables
+            """
+        ).fetchone()
+
+        assert row == (
+            "statement.balance_sheet",
+            "consolidated",
+            0.95,
+            "table_titles.statement.balance_sheet.prefer",
+            0,
         )
     finally:
         conn.close()

@@ -4,6 +4,9 @@ statement_titles:
     include:
       - consolidated balance sheets
       - consolidated statements of financial position
+    prefer:
+      - consolidated balance sheets
+      - consolidated statements of financial position
     exclude:
       - parent company
   statement.income_statement:
@@ -11,8 +14,14 @@ statement_titles:
       - consolidated statements of operations
       - consolidated statements of income
       - consolidated statements of earnings
+    prefer:
+      - consolidated statements of operations
+      - consolidated statements of income
+      - consolidated statements of earnings
   statement.cash_flow:
     include:
+      - consolidated statements of cash flows
+    prefer:
       - consolidated statements of cash flows
 scope_keywords:
   consolidated:

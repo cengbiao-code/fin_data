@@ -6,6 +6,11 @@ statement_titles:
       - consolidated balance sheet
       - 綜合財務狀況表
       - 綜合資產負債表
+    prefer:
+      - consolidated statement of financial position
+      - consolidated balance sheet
+      - 綜合財務狀況表
+      - 綜合資產負債表
     exclude:
       - company statement of financial position
       - 公司財務狀況表
@@ -15,8 +20,16 @@ statement_titles:
       - consolidated income statement
       - 綜合損益表
       - 綜合收益表
+    prefer:
+      - consolidated statement of profit or loss
+      - consolidated income statement
+      - 綜合損益表
+      - 綜合收益表
   statement.cash_flow:
     include:
+      - consolidated statement of cash flows
+      - 綜合現金流量表
+    prefer:
       - consolidated statement of cash flows
       - 綜合現金流量表
 scope_keywords:
