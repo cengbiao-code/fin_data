@@ -7,6 +7,7 @@ from pathlib import Path
 from fin_report_extractor.audit_db import connect_audit_db, initialize_audit_db
 from fin_report_extractor.extraction_runs import extract_tables_for_report
 from fin_report_extractor.extractors import PdfPlumberExtractor
+from fin_report_extractor.fact_extractor import extract_facts_for_run
 from fin_report_extractor.import_pdf import register_pdf
 from fin_report_extractor.pdf_profiler import profile_pdf_for_report
 from fin_report_extractor.table_classifier import classify_tables_for_run
@@ -114,6 +115,26 @@ def _classify_tables(args: argparse.Namespace) -> None:
     )
 
 
+def _extract_facts(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        summary = extract_facts_for_run(
+            conn,
+            args.extraction_run_id,
+            rules_root=Path(args.rules_root),
+        )
+    finally:
+        conn.close()
+
+    print(
+        f"extraction_run_id={summary.extraction_run_id} "
+        f"facts={summary.fact_count} needs_review={summary.needs_review_count}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin-report")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -149,6 +170,12 @@ def build_parser() -> argparse.ArgumentParser:
     classify_tables.add_argument("--audit-db", default="data/db/audit.sqlite")
     classify_tables.add_argument("--rules-root", default="rules")
     classify_tables.set_defaults(func=_classify_tables)
+
+    extract_facts = subparsers.add_parser("extract-facts")
+    extract_facts.add_argument("extraction_run_id")
+    extract_facts.add_argument("--audit-db", default="data/db/audit.sqlite")
+    extract_facts.add_argument("--rules-root", default="rules")
+    extract_facts.set_defaults(func=_extract_facts)
 
     return parser
 
