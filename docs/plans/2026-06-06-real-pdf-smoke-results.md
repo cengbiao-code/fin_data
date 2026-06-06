@@ -111,3 +111,53 @@ keywords but no `prefer` keywords, so the confidence remains `0.85`.
   is a high-confidence exact statement heading.
 - Keep first-pass classification conservative until real report samples are
   available.
+
+## Smoke 3: Balance Sheet Facts and Validation
+
+PDF:
+
+```text
+.smoke-run/raw/sample_validated_statement.pdf
+```
+
+This generated PDF contains:
+
+- `Consolidated Balance Sheets`
+- `USD thousands`
+- `Total assets = 100`
+- `Total liabilities = 40`
+- `Total stockholders' equity = 60`
+
+Observed command output:
+
+```text
+profile-pdf: pages=1 is_text_pdf=1 keyword_pages=1
+extract-tables: tables=1 cells=10
+classify-tables: classified=1 review_required=0
+extract-facts: facts=3 needs_review=0
+validate-run: results=1 failed=0
+```
+
+Extracted facts:
+
+```text
+total_assets       100000 normalized
+total_liabilities  40000 normalized
+total_equity       60000 normalized
+```
+
+Validation result:
+
+```text
+balance_sheet.assets_equal_liabilities_plus_equity
+status=verified
+lhs_value=100000
+rhs_value=100000
+difference_value=0
+```
+
+Finding:
+
+The current command chain can now move from a text PDF through raw table
+extraction, table classification, balance sheet fact extraction, and persisted
+validation results for the first simple balance sheet shape.
