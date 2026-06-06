@@ -8,6 +8,7 @@ from fin_report_extractor.audit_db import connect_audit_db, initialize_audit_db
 from fin_report_extractor.extraction_runs import extract_tables_for_report
 from fin_report_extractor.extractors import PdfPlumberExtractor
 from fin_report_extractor.import_pdf import register_pdf
+from fin_report_extractor.pdf_profiler import profile_pdf_for_report
 
 
 def _init_db(args: argparse.Namespace) -> None:
@@ -73,6 +74,24 @@ def _extract_tables(args: argparse.Namespace) -> None:
     )
 
 
+def _profile_pdf(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        profile = profile_pdf_for_report(conn, args.report_id)
+    finally:
+        conn.close()
+
+    print(
+        f"report_id={profile.report_id} pages={profile.page_count} "
+        f"is_text_pdf={1 if profile.is_text_pdf else 0} "
+        f"keyword_pages={profile.keyword_page_count}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin-report")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -97,6 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
     extract_tables.add_argument("report_id")
     extract_tables.add_argument("--audit-db", default="data/db/audit.sqlite")
     extract_tables.set_defaults(func=_extract_tables)
+
+    profile_pdf = subparsers.add_parser("profile-pdf")
+    profile_pdf.add_argument("report_id")
+    profile_pdf.add_argument("--audit-db", default="data/db/audit.sqlite")
+    profile_pdf.set_defaults(func=_profile_pdf)
 
     return parser
 
