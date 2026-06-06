@@ -24,7 +24,7 @@ page metadata only.
 
 ## Track B: Table Classifier Design
 
-Status: planned after profiler implementation starts.
+Status: first implementation complete.
 
 Deliverables:
 
@@ -41,7 +41,7 @@ should wait until the profiler contract is stable.
 
 ## Track C: Real PDF Smoke Samples
 
-Status: planned.
+Status: first smoke pass complete.
 
 Deliverables:
 
