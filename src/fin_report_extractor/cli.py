@@ -11,6 +11,7 @@ from fin_report_extractor.fact_extractor import extract_facts_for_run
 from fin_report_extractor.import_pdf import register_pdf
 from fin_report_extractor.pdf_profiler import profile_pdf_for_report
 from fin_report_extractor.table_classifier import classify_tables_for_run
+from fin_report_extractor.validation_runner import validate_extraction_run
 
 
 def _init_db(args: argparse.Namespace) -> None:
@@ -135,6 +136,27 @@ def _extract_facts(args: argparse.Namespace) -> None:
     )
 
 
+def _validate_run(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        summary = validate_extraction_run(
+            conn,
+            args.extraction_run_id,
+            rules_root=Path(args.rules_root),
+        )
+    finally:
+        conn.close()
+
+    print(
+        f"validation_run_id={summary.validation_run_id} "
+        f"extraction_run_id={summary.extraction_run_id} "
+        f"results={summary.result_count} failed={summary.failed_count}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin-report")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -176,6 +198,12 @@ def build_parser() -> argparse.ArgumentParser:
     extract_facts.add_argument("--audit-db", default="data/db/audit.sqlite")
     extract_facts.add_argument("--rules-root", default="rules")
     extract_facts.set_defaults(func=_extract_facts)
+
+    validate_run = subparsers.add_parser("validate-run")
+    validate_run.add_argument("extraction_run_id")
+    validate_run.add_argument("--audit-db", default="data/db/audit.sqlite")
+    validate_run.add_argument("--rules-root", default="rules")
+    validate_run.set_defaults(func=_validate_run)
 
     return parser
 
