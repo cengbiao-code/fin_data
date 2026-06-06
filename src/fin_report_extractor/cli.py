@@ -9,6 +9,7 @@ from fin_report_extractor.extraction_runs import extract_tables_for_report
 from fin_report_extractor.extractors import PdfPlumberExtractor
 from fin_report_extractor.import_pdf import register_pdf
 from fin_report_extractor.pdf_profiler import profile_pdf_for_report
+from fin_report_extractor.table_classifier import classify_tables_for_run
 
 
 def _init_db(args: argparse.Namespace) -> None:
@@ -92,6 +93,27 @@ def _profile_pdf(args: argparse.Namespace) -> None:
     )
 
 
+def _classify_tables(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        summary = classify_tables_for_run(
+            conn,
+            args.extraction_run_id,
+            rules_root=Path(args.rules_root),
+        )
+    finally:
+        conn.close()
+
+    print(
+        f"extraction_run_id={summary.extraction_run_id} "
+        f"classified={summary.classified_count} "
+        f"review_required={summary.review_required_count}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin-report")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -121,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
     profile_pdf.add_argument("report_id")
     profile_pdf.add_argument("--audit-db", default="data/db/audit.sqlite")
     profile_pdf.set_defaults(func=_profile_pdf)
+
+    classify_tables = subparsers.add_parser("classify-tables")
+    classify_tables.add_argument("extraction_run_id")
+    classify_tables.add_argument("--audit-db", default="data/db/audit.sqlite")
+    classify_tables.add_argument("--rules-root", default="rules")
+    classify_tables.set_defaults(func=_classify_tables)
 
     return parser
 
