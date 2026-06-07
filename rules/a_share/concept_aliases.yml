@@ -19,6 +19,11 @@ concepts:
     aliases:
       - 所有者权益合计
       - 股东权益合计
+  total_liabilities_and_equity:
+    confidence: 0.99
+    aliases:
+      - 负债和所有者权益总计
+      - 负债及所有者权益总计
   revenue:
     confidence: 0.98
     aliases:

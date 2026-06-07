@@ -64,14 +64,8 @@ def _page_text_sample(
     return row[0]
 
 
-def _table_text(
-    conn: Connection,
-    report_id: str,
-    raw_table_id: str,
-    raw_table_text: str | None,
-    page_number: int,
-) -> str:
-    cell_text = "\n".join(
+def _cell_text(conn: Connection, raw_table_id: str) -> str:
+    return "\n".join(
         str(row[0])
         for row in conn.execute(
             """
@@ -83,15 +77,10 @@ def _table_text(
             (raw_table_id,),
         ).fetchall()
     )
-    return "\n".join(
-        part
-        for part in [
-            _page_text_sample(conn, report_id, page_number),
-            raw_table_text,
-            cell_text,
-        ]
-        if part
-    )
+
+
+def _local_table_text(conn: Connection, raw_table_id: str, raw_table_text: str | None) -> str:
+    return "\n".join(part for part in [raw_table_text, _cell_text(conn, raw_table_id)] if part)
 
 
 def _contains_keyword(text: str, keyword: str) -> bool:
@@ -103,45 +92,110 @@ def _infer_scope(text: str, table_titles: dict[str, Any]) -> str:
     parent_keywords = scope_keywords.get("parent", []) or []
     consolidated_keywords = scope_keywords.get("consolidated", []) or []
 
-    if any(_contains_keyword(text, keyword) for keyword in parent_keywords):
-        return "parent"
     if any(_contains_keyword(text, keyword) for keyword in consolidated_keywords):
         return "consolidated"
+    if any(_contains_keyword(text, keyword) for keyword in parent_keywords):
+        return "parent"
     return "unknown"
+
+
+def _content_rule_match(text: str, role: str) -> bool:
+    content_patterns = {
+        "statement.balance_sheet": [
+            "资产总计",
+            "负债合计",
+            "所有者权益合计",
+        ],
+        "statement.income_statement": [
+            "一、营业总收入",
+            "二、营业总成本",
+            "五、净利润",
+            "净利润（净亏损",
+            "综合收益总额",
+        ],
+        "statement.cash_flow": [
+            "一、经营活动产生的现金流量",
+            "经营活动产生的现金流量：",
+            "销售商品、提供劳务收到的现金",
+            "筹资活动现金流入小计",
+        ],
+    }
+    patterns = content_patterns.get(role, [])
+    return any(_contains_keyword(text, pattern) for pattern in patterns)
 
 
 def _classify_raw_table(
     raw_table_id: str,
-    text: str,
+    page_text: str,
+    local_text: str,
     table_titles: dict[str, Any],
 ) -> TableClassification:
     statement_titles = table_titles.get("statement_titles", {})
     best_role = "unknown"
     best_confidence = 0.0
     best_rule_id: str | None = None
+    local_content_role: str | None = None
+    context_text = "\n".join(part for part in [page_text, local_text] if part)
 
     for role, rule in statement_titles.items():
         excludes = rule.get("exclude", []) or []
-        if any(_contains_keyword(text, keyword) for keyword in excludes):
+        if any(_contains_keyword(context_text, keyword) for keyword in excludes):
             continue
-
         prefer = rule.get("prefer", []) or []
-        if any(_contains_keyword(text, keyword) for keyword in prefer):
+        includes = rule.get("include", []) or []
+        if any(_contains_keyword(local_text, keyword) for keyword in prefer):
             confidence = 0.95
             rule_id = f"table_titles.{role}.prefer"
-        else:
-            includes = rule.get("include", []) or []
-            if not any(_contains_keyword(text, keyword) for keyword in includes):
-                continue
+        elif any(_contains_keyword(local_text, keyword) for keyword in includes):
             confidence = 0.85
             rule_id = f"table_titles.{role}.include"
+        else:
+            continue
 
         if confidence > best_confidence:
             best_role = str(role)
             best_confidence = confidence
             best_rule_id = rule_id
 
-    scope = _infer_scope(text, table_titles)
+    if best_confidence == 0.0:
+        for role, rule in statement_titles.items():
+            excludes = rule.get("exclude", []) or []
+            if any(_contains_keyword(context_text, keyword) for keyword in excludes):
+                continue
+            if _content_rule_match(local_text, str(role)) and local_content_role is None:
+                local_content_role = str(role)
+                best_role = str(role)
+                best_confidence = 0.75
+                best_rule_id = f"table_titles.{role}.content"
+
+    for role, rule in statement_titles.items():
+        if _content_rule_match(local_text, str(role)) and local_content_role is None:
+            local_content_role = str(role)
+        if local_content_role is not None and local_content_role != str(role):
+            continue
+
+        excludes = rule.get("exclude", []) or []
+        if any(_contains_keyword(context_text, keyword) for keyword in excludes):
+            continue
+
+        prefer = rule.get("prefer", []) or []
+        if any(_contains_keyword(page_text, keyword) for keyword in prefer):
+            confidence = 0.95
+            rule_id = f"table_titles.{role}.prefer"
+        else:
+            includes = rule.get("include", []) or []
+            if any(_contains_keyword(page_text, keyword) for keyword in includes):
+                confidence = 0.85
+                rule_id = f"table_titles.{role}.include"
+            else:
+                continue
+
+        if confidence > best_confidence:
+            best_role = str(role)
+            best_confidence = confidence
+            best_rule_id = rule_id
+
+    scope = _infer_scope(context_text, table_titles)
     requires_review = best_confidence < 0.95 or scope != "consolidated"
     return TableClassification(
         raw_table_id=raw_table_id,
@@ -175,13 +229,8 @@ def classify_tables_for_run(
     classifications = [
         _classify_raw_table(
             str(raw_table_id),
-            _table_text(
-                conn,
-                report_id,
-                str(raw_table_id),
-                raw_table_text,
-                int(page_number),
-            ),
+            _page_text_sample(conn, report_id, int(page_number)) or "",
+            _local_table_text(conn, str(raw_table_id), raw_table_text),
             rule_pack.table_titles,
         )
         for raw_table_id, raw_table_text, page_number in raw_tables

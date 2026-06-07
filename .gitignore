@@ -15,6 +15,7 @@ dist/
 # Local smoke-test outputs
 .smoke-run/
 .tmp/
+data/raw_pdfs/
 
 # Git worktrees used for parallel issue work
 .worktrees/
