@@ -16,6 +16,13 @@ dist/
 .smoke-run/
 .tmp/
 data/raw_pdfs/
+data/db/
+data/review_exports/
+outputs/raw-pdfs-test-report/
+graphify-out/
+
+# Test temp directory (--basetemp override)
+.pytest-tmp/
 
 # Git worktrees used for parallel issue work
 .worktrees/

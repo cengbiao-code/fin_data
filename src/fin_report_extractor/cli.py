@@ -10,6 +10,7 @@ from fin_report_extractor.extractors import PdfPlumberExtractor
 from fin_report_extractor.fact_extractor import extract_facts_for_run
 from fin_report_extractor.import_pdf import register_pdf
 from fin_report_extractor.pdf_profiler import profile_pdf_for_report
+from fin_report_extractor.statement_workbook import export_statement_workbook
 from fin_report_extractor.table_classifier import classify_tables_for_run
 from fin_report_extractor.validation_runner import validate_extraction_run
 
@@ -157,6 +158,68 @@ def _validate_run(args: argparse.Namespace) -> None:
     )
 
 
+def _export_statements(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        output_path = export_statement_workbook(
+            conn,
+            args.extraction_run_id,
+            output_path=args.output or None,
+        )
+    finally:
+        conn.close()
+
+    print(output_path)
+
+
+def _export_pdf_statements(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+
+        report_id = register_pdf(
+            conn,
+            args.pdf_path,
+            stored_pdf_path=str(Path(args.pdf_path).resolve()),
+            market=args.market,
+            company_id=args.company_id,
+            company_name=args.company_name,
+            fiscal_year=args.fiscal_year,
+            report_type=args.report_type,
+        )
+
+        profile_pdf_for_report(conn, report_id)
+
+        summary = extract_tables_for_report(
+            conn,
+            report_id,
+            extractor=PdfPlumberExtractor(),
+        )
+        extraction_run_id = summary.extraction_run_id
+
+        classify_tables_for_run(
+            conn,
+            extraction_run_id,
+            rules_root=Path(args.rules_root),
+        )
+
+        output_path = export_statement_workbook(
+            conn,
+            extraction_run_id,
+            output_path=args.output or None,
+        )
+    finally:
+        conn.close()
+
+    print(output_path)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin-report")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -204,6 +267,24 @@ def build_parser() -> argparse.ArgumentParser:
     validate_run.add_argument("--audit-db", default="data/db/audit.sqlite")
     validate_run.add_argument("--rules-root", default="rules")
     validate_run.set_defaults(func=_validate_run)
+
+    export_statements = subparsers.add_parser("export-statements")
+    export_statements.add_argument("extraction_run_id")
+    export_statements.add_argument("--audit-db", default="data/db/audit.sqlite")
+    export_statements.add_argument("--output")
+    export_statements.set_defaults(func=_export_statements)
+
+    export_pdf = subparsers.add_parser("export-pdf-statements")
+    export_pdf.add_argument("pdf_path")
+    export_pdf.add_argument("--market", required=True)
+    export_pdf.add_argument("--company-id")
+    export_pdf.add_argument("--company-name")
+    export_pdf.add_argument("--fiscal-year", type=int)
+    export_pdf.add_argument("--report-type")
+    export_pdf.add_argument("--audit-db", default="data/db/audit.sqlite")
+    export_pdf.add_argument("--rules-root", default="rules")
+    export_pdf.add_argument("--output")
+    export_pdf.set_defaults(func=_export_pdf_statements)
 
     return parser
 
