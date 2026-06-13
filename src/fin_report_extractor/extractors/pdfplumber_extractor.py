@@ -10,6 +10,7 @@ from fin_report_extractor.extractors.base import (
     ExtractedTable,
     TableExtractor,
 )
+from fin_report_extractor.pdf_text_repair import repair_pdf_text
 
 
 def _bbox_json(bbox: object) -> str | None:
@@ -21,7 +22,7 @@ def _bbox_json(bbox: object) -> str | None:
 def _cell_text(value: object) -> str | None:
     if value is None:
         return None
-    text = str(value)
+    text = repair_pdf_text(str(value))
     return text if text != "" else None
 
 

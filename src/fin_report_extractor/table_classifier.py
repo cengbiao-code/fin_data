@@ -87,6 +87,22 @@ def _contains_keyword(text: str, keyword: str) -> bool:
     return keyword.lower() in text.lower()
 
 
+def _has_independent_parent_reference(text: str) -> bool:
+    """Check if '母公司' appears as a scope indicator rather than within
+    consolidated-statement line items like '归属于母公司所有者权益合计'.
+
+    In consolidated financial statements, line items such as
+    '归属于母公司所有者权益合计' (total equity attributable to parent
+    company shareholders) contain '母公司' but do NOT indicate a
+    parent-only statement -- they are standard consolidated lines.
+    """
+    if "母公司" not in text:
+        return False
+    for pattern in ("归属于母公司", "归属母公司"):
+        text = text.replace(pattern, "")
+    return "母公司" in text
+
+
 def _infer_scope(text: str, table_titles: dict[str, Any]) -> str:
     scope_keywords = table_titles.get("scope_keywords", {})
     parent_keywords = scope_keywords.get("parent", []) or []
@@ -94,8 +110,12 @@ def _infer_scope(text: str, table_titles: dict[str, Any]) -> str:
 
     if any(_contains_keyword(text, keyword) for keyword in consolidated_keywords):
         return "consolidated"
-    if any(_contains_keyword(text, keyword) for keyword in parent_keywords):
-        return "parent"
+    for keyword in parent_keywords:
+        if keyword == "母公司":
+            if _has_independent_parent_reference(text):
+                return "parent"
+        elif _contains_keyword(text, keyword):
+            return "parent"
     return "unknown"
 
 
@@ -124,6 +144,23 @@ def _content_rule_match(text: str, role: str) -> bool:
     return any(_contains_keyword(text, pattern) for pattern in patterns)
 
 
+def _looks_like_note_table(text: str) -> bool:
+    note_markers = [
+        "分部資料",
+        "分部收入",
+        "綜合財務報表附註",
+        "財務報表附註",
+        "現金流量表附註",
+        "會計政策概要",
+        "財務概要",
+        "五年概要",
+        "note",
+        "segment information",
+        "segment revenue",
+    ]
+    return any(_contains_keyword(text, marker) for marker in note_markers)
+
+
 def _classify_raw_table(
     raw_table_id: str,
     page_text: str,
@@ -136,6 +173,16 @@ def _classify_raw_table(
     best_rule_id: str | None = None
     local_content_role: str | None = None
     context_text = "\n".join(part for part in [page_text, local_text] if part)
+
+    if _looks_like_note_table(local_text):
+        return TableClassification(
+            raw_table_id=raw_table_id,
+            table_role="unknown",
+            statement_scope=_infer_scope(context_text, table_titles),
+            confidence=0.0,
+            rule_id=None,
+            requires_review=True,
+        )
 
     for role, rule in statement_titles.items():
         excludes = rule.get("exclude", []) or []
@@ -172,6 +219,8 @@ def _classify_raw_table(
         if _content_rule_match(local_text, str(role)) and local_content_role is None:
             local_content_role = str(role)
         if local_content_role is not None and local_content_role != str(role):
+            continue
+        if _looks_like_note_table(local_text):
             continue
 
         excludes = rule.get("exclude", []) or []

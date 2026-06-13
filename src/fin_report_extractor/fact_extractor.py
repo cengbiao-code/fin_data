@@ -42,6 +42,7 @@ class SourceTable:
     page_number: int
     table_index_on_page: int
     extractor_name: str
+    raw_table_text: str
 
 
 @dataclass(frozen=True)
@@ -292,6 +293,7 @@ def _source_tables(conn: Connection, extraction_run_id: str) -> list[SourceTable
             page_number=int(row[3]),
             table_index_on_page=int(row[4]),
             extractor_name=str(row[5]),
+            raw_table_text=str(row[6] or ""),
         )
         for row in conn.execute(
             """
@@ -300,7 +302,8 @@ def _source_tables(conn: Connection, extraction_run_id: str) -> list[SourceTable
                    coalesce(classified_tables.statement_scope, 'unknown'),
                    raw_tables.page_number,
                    raw_tables.table_index_on_page,
-                   raw_tables.extractor_name
+                   raw_tables.extractor_name,
+                   raw_tables.raw_table_text
             from raw_tables
             left join classified_tables
               on classified_tables.raw_table_id = raw_tables.raw_table_id
@@ -310,6 +313,45 @@ def _source_tables(conn: Connection, extraction_run_id: str) -> list[SourceTable
             (extraction_run_id,),
         ).fetchall()
     ]
+
+
+def _looks_like_statement_continuation(table: SourceTable, table_role: str) -> bool:
+    text = table.raw_table_text.lower()
+    role_markers = {
+        "statement.balance_sheet": [
+            "资产",
+            "負債",
+            "负债",
+            "權益",
+            "权益",
+            "assets",
+            "liabilities",
+            "equity",
+        ],
+        "statement.income_statement": [
+            "净利润",
+            "淨利潤",
+            "期內盈利",
+            "年內溢利",
+            "全面收益",
+            "每股盈利",
+            "profit",
+            "earnings per share",
+        ],
+        "statement.cash_flow": [
+            "经营活动",
+            "經營活動",
+            "投资活动",
+            "投資活動",
+            "筹资活动",
+            "融資活動",
+            "现金及现金等价物",
+            "現金及現金等價物",
+            "cash flow",
+            "cash flows",
+        ],
+    }
+    return any(marker.lower() in text for marker in role_markers.get(table_role, []))
 
 
 def _statement_groups(tables: list[SourceTable]) -> list[StatementGroup]:
@@ -325,12 +367,17 @@ def _statement_groups(tables: list[SourceTable]) -> list[StatementGroup]:
         group_tables = [table]
         consumed_table_ids.add(table.raw_table_id)
         for next_table in tables[index + 1 :]:
+            previous_page = group_tables[-1].page_number
             if next_table.table_role in STATEMENT_METADATA:
                 if next_table.table_role == table.table_role:
                     group_tables.append(next_table)
                     consumed_table_ids.add(next_table.raw_table_id)
                 break
             if next_table.table_role == "unknown":
+                if next_table.page_number - previous_page > 1:
+                    break
+                if not _looks_like_statement_continuation(next_table, table.table_role):
+                    break
                 group_tables.append(next_table)
                 consumed_table_ids.add(next_table.raw_table_id)
                 continue

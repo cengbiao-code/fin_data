@@ -1,8 +1,10 @@
 from pathlib import Path
 import sqlite3
+import json
 
 from fin_report_extractor.extractors import ExtractedCell, ExtractedTable
 from fin_report_extractor.cli import main
+from fin_report_extractor.pdf_font_inspector import PdfEncodingReport
 
 
 def test_init_db_creates_audit_and_analytics_databases(tmp_path, capsys):
@@ -395,3 +397,96 @@ def test_export_pdf_statements_cli_runs_one_shot(tmp_path, capsys, monkeypatch):
     assert "资产负债表" in wb.sheetnames
     assert "利润表" in wb.sheetnames
     assert "现金流量表" in wb.sheetnames
+
+
+def test_inspect_pdf_fonts_cli_prints_text_report(tmp_path, capsys, monkeypatch):
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"%PDF-1.4 report\n")
+
+    def fake_inspect(path, *, pages=None):
+        assert path == pdf
+        assert pages == [1, 2]
+        return PdfEncodingReport(
+            pdf_path=str(path),
+            producer="Adobe InDesign",
+            pages_inspected=[1, 2],
+            classification="missing_tounicode_decode_candidate",
+            summary={
+                "hk_cmap_font_count": 1,
+                "fonts_missing_tounicode": 1,
+                "candidate_decoder_count": 1,
+            },
+            pages=[],
+        )
+
+    monkeypatch.setattr(
+        "fin_report_extractor.cli.inspect_pdf_fonts",
+        fake_inspect,
+    )
+
+    main(["inspect-pdf-fonts", str(pdf), "--pages", "1-2"])
+
+    output = capsys.readouterr().out
+    assert "classification: missing_tounicode_decode_candidate" in output
+    assert "producer: Adobe InDesign" in output
+    assert "hk_cmap_fonts: 1" in output
+
+
+def test_inspect_pdf_fonts_cli_prints_json_report(tmp_path, capsys, monkeypatch):
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"%PDF-1.4 report\n")
+
+    def fake_inspect(path, *, pages=None):
+        assert path == pdf
+        assert pages is None
+        return PdfEncodingReport(
+            pdf_path=str(path),
+            producer=None,
+            pages_inspected=[1],
+            classification="healthy_text_layer",
+            summary={
+                "hk_cmap_font_count": 0,
+                "fonts_missing_tounicode": 0,
+                "candidate_decoder_count": 0,
+            },
+            pages=[],
+        )
+
+    monkeypatch.setattr(
+        "fin_report_extractor.cli.inspect_pdf_fonts",
+        fake_inspect,
+    )
+
+    main(["inspect-pdf-fonts", str(pdf), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["classification"] == "healthy_text_layer"
+    assert payload["pages_inspected"] == [1]
+
+
+def test_inspect_pdf_fonts_cli_writes_json_as_utf8(tmp_path, capsys, monkeypatch):
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"%PDF-1.4 report\n")
+
+    def fake_inspect(path, *, pages=None):
+        return PdfEncodingReport(
+            pdf_path=str(path),
+            producer="Adobe PDF Library 17.0",
+            pages_inspected=[1],
+            classification="unrecoverable_or_ocr_required",
+            summary={
+                "hk_cmap_font_count": 0,
+                "fonts_missing_tounicode": 0,
+                "candidate_decoder_count": 0,
+            },
+            pages=[],
+        )
+
+    monkeypatch.setattr(
+        "fin_report_extractor.cli.inspect_pdf_fonts",
+        fake_inspect,
+    )
+
+    main(["inspect-pdf-fonts", str(pdf), "--json"])
+
+    assert "unrecoverable_or_ocr_required" in capsys.readouterr().out

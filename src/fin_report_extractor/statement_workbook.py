@@ -36,29 +36,50 @@ REQUIRED_STATEMENT_ROLES = [
     "statement.cash_flow",
 ]
 
-REQUIRED_LABEL_PATTERNS: dict[str, list[list[str]]] = {
-    "statement.balance_sheet": [
-        ["资产总计"],
-        ["负债合计"],
-        ["所有者权益合计", "股东权益合计", "负债和所有者权益总计"],
-    ],
-    "statement.income_statement": [
-        ["净利润"],
-        ["综合收益总额"],
-        ["基本每股收益"],
-    ],
-    "statement.cash_flow": [
-        ["经营活动产生的现金流量净额"],
-        ["投资活动产生的现金流量净额"],
-        ["筹资活动产生的现金流量净额"],
-        ["现金及现金等价物净增加额", "期末现金及现金等价物余额"],
-    ],
+REQUIRED_LABEL_PATTERNS_BY_MARKET: dict[str, dict[str, list[list[str]]]] = {
+    "a_share": {
+        "statement.balance_sheet": [
+            ["资产总计"],
+            ["负债合计"],
+            ["所有者权益合计", "股东权益合计", "负债和所有者权益总计"],
+        ],
+        "statement.income_statement": [
+            ["净利润"],
+            ["综合收益总额"],
+            ["基本每股收益"],
+        ],
+        "statement.cash_flow": [
+            ["经营活动产生的现金流量净额"],
+            ["投资活动产生的现金流量净额"],
+            ["筹资活动产生的现金流量净额"],
+            ["现金及现金等价物净增加额", "期末现金及现金等价物余额"],
+        ],
+    },
+    "hk": {
+        "statement.balance_sheet": [
+            ["資產總額", "總資產", "total assets"],
+            ["負債總額", "總負債", "total liabilities"],
+            ["權益總額", "總權益", "total equity"],
+        ],
+        "statement.income_statement": [
+            ["期內盈利", "期內虧損", "年內溢利", "年內虧損", "profit for the period", "profit for the year"],
+            ["每股盈利", "每股基本", "每股虧損", "earnings per share", "eps"],
+            ["經營盈利", "經營虧損", "operating profit"],
+        ],
+        "statement.cash_flow": [
+            ["經營活動所得現金流量淨額", "經營活動產生的現金流量淨額", "經營活動所用", "net cash generated from operating activities"],
+            ["投資活動耗用現金流量淨額", "投資活動所用現金流量淨額", "投資活動所得現金流量淨額", "net cash used in investing activities"],
+            ["融資活動", "net cash generated from financing activities"],
+            ["期末的現金及現金等價物", "年末現金及現金等價物", "現金及現金等價物增加淨額", "cash and cash equivalents"],
+        ],
+    },
 }
 
 HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
 HEADER_FONT = Font(bold=True)
 LABEL_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
 AMOUNT_FORMAT = '#,##0.00'
+ILLEGAL_EXCEL_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]")
 
 
 def _parse_decimal(raw_value: str | None) -> float | None:
@@ -77,6 +98,12 @@ def _parse_decimal(raw_value: str | None) -> float | None:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def _excel_safe_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    return ILLEGAL_EXCEL_CONTROL_CHARS.sub("", str(value))
 
 
 def _is_numeric_text(text: str) -> bool:
@@ -326,8 +353,14 @@ def _cell_text(cell: dict[str, Any] | None) -> str | None:
 
 def _check_completeness(
     statement_rows: dict[str, list[dict[str, Any]]],
+    *,
+    market: str = "a_share",
 ) -> list[str]:
     errors: list[str] = []
+    required_patterns = REQUIRED_LABEL_PATTERNS_BY_MARKET.get(
+        market,
+        REQUIRED_LABEL_PATTERNS_BY_MARKET["a_share"],
+    )
 
     for role in REQUIRED_STATEMENT_ROLES:
         rows = statement_rows.get(role, [])
@@ -339,7 +372,7 @@ def _check_completeness(
             row["label"] or "" for row in rows if not row.get("is_header")
         )
 
-        for pattern_group in REQUIRED_LABEL_PATTERNS.get(role, []):
+        for pattern_group in required_patterns.get(role, []):
             if not any(
                 _contains_pattern(all_labels, pattern) for pattern in pattern_group
             ):
@@ -388,10 +421,10 @@ def _write_statement_sheet(
         current_val = _parse_decimal(row.get("current"))
         prior_val = _parse_decimal(row.get("prior"))
         ws.append([
-            row.get("label"),
-            current_val if current_val is not None else (row.get("current") or ""),
-            prior_val if prior_val is not None else (row.get("prior") or ""),
-            row.get("page"),
+            _excel_safe_text(row.get("label")),
+            current_val if current_val is not None else _excel_safe_text(row.get("current")),
+            prior_val if prior_val is not None else _excel_safe_text(row.get("prior")),
+            _excel_safe_text(row.get("page")),
         ])
 
     _apply_statement_formatting(ws, num_columns=len(columns))
@@ -507,7 +540,7 @@ def export_statement_workbook(
                 for t in group.tables
             ]
 
-    completeness_errors = _check_completeness(statement_rows)
+    completeness_errors = _check_completeness(statement_rows, market=market)
     if completeness_errors:
         error_message = "\n".join(completeness_errors)
         raise ValueError(f"报表不完整，无法导出:\n{error_message}")

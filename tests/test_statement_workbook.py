@@ -9,6 +9,7 @@ from fin_report_extractor.import_pdf import register_pdf
 from fin_report_extractor.statement_workbook import (
     _adjust_columns_from_data,
     _check_completeness,
+    _excel_safe_text,
     _is_numeric_text,
     _parse_decimal,
     export_statement_workbook,
@@ -127,6 +128,9 @@ class TestParseDecimal:
 
     def test_is_numeric_text_rejects_empty(self):
         assert _is_numeric_text("") is False
+
+    def test_excel_safe_text_removes_illegal_control_characters(self):
+        assert _excel_safe_text("abc\x01def\x0bg") == "abcdefg"
 
 
 # ── adjust_columns_from_data ──────────────────────────────────────────────────
@@ -271,6 +275,48 @@ class TestCompletenessCheck:
         }
         errors = _check_completeness(rows)
         assert any("资产负债表" in e for e in errors)
+
+    def test_hk_statement_labels_are_accepted(self):
+        rows = {
+            "statement.balance_sheet": [
+                {"label": "資產總額", "is_header": False},
+                {"label": "負債總額", "is_header": False},
+                {"label": "權益總額", "is_header": False},
+            ],
+            "statement.income_statement": [
+                {"label": "期內盈利", "is_header": False},
+                {"label": "本公司權益持有人應佔每股盈利 －基本", "is_header": False},
+            ],
+            "statement.cash_flow": [
+                {"label": "經營活動所得現金流量淨額", "is_header": False},
+                {"label": "投資活動耗用現金流量淨額", "is_header": False},
+                {"label": "融資活動（耗用）╱所得現金流量淨額", "is_header": False},
+                {"label": "期末的現金及現金等價物", "is_header": False},
+            ],
+        }
+
+        assert _check_completeness(rows, market="hk") == []
+
+    def test_hk_loss_statement_labels_are_accepted(self):
+        rows = {
+            "statement.balance_sheet": [
+                {"label": "資產總額", "is_header": False},
+                {"label": "負債總額", "is_header": False},
+                {"label": "權益總額", "is_header": False},
+            ],
+            "statement.income_statement": [
+                {"label": "年內（虧損）╱", "is_header": False},
+                {"label": "每股基本（虧損）╱", "is_header": False},
+            ],
+            "statement.cash_flow": [
+                {"label": "經營活動（所用）╱ 所得現金流量淨額", "is_header": False},
+                {"label": "投資活動所得現金流量淨額", "is_header": False},
+                {"label": "融資活動所得╱（所用）現金流量淨額", "is_header": False},
+                {"label": "年末現金及現金等價物", "is_header": False},
+            ],
+        }
+
+        assert _check_completeness(rows, market="hk") == []
 
 
 # ── helper: create full three-statement DB ───────────────────────────────────
@@ -685,6 +731,72 @@ class TestExportStatementWorkbook:
             cash_row = [r for r in rows if r[0] and "期末现金" in str(r[0])][0]
             assert cash_row[1] == 200
             assert cash_row[2] == 180
+        finally:
+            conn.close()
+
+    def test_segment_note_after_cashflow_is_not_appended(self, tmp_path):
+        conn = connect_audit_db(tmp_path / "audit.sqlite")
+        initialize_audit_db(conn)
+        pdf = tmp_path / "sample.pdf"
+        pdf.write_bytes(b"%PDF-1.4 sample\n")
+        report_id = register_pdf(
+            conn, pdf, stored_pdf_path=str(pdf),
+            market="hk", company_id="0700.HK", company_name="Tencent",
+            fiscal_year=2025, report_type="annual",
+        )
+        _insert_page(conn, report_id, 1, "簡明綜合收益表\n人民幣百萬元")
+        _insert_page(conn, report_id, 2, "簡明綜合財務狀況表\n人民幣百萬元")
+        _insert_page(conn, report_id, 3, "簡明綜合現金流量表\n人民幣百萬元")
+        _insert_page(conn, report_id, 4, "分部資料及收入\n與簡明綜合收益表採用一致的方式計量")
+        run_id = create_extraction_run(conn, report_id, extractor_versions={"pymupdf": "test"})
+
+        is_rows = _is_cf_header(1)[:]
+        is_rows.extend(_a_share_data_row(1, "期內盈利", "100", "90", 1))
+        is_rows.extend(_a_share_data_row(2, "每股盈利", "1.00", "0.90", 1))
+
+        bs_rows = _is_cf_header(2)[:]
+        bs_rows.extend(_a_share_data_row(1, "資產總額", "500", "450", 2))
+        bs_rows.extend(_a_share_data_row(2, "負債總額", "200", "180", 2))
+        bs_rows.extend(_a_share_data_row(3, "權益總額", "300", "270", 2))
+
+        cf_rows = _is_cf_header(3)[:]
+        cf_rows.extend(_a_share_data_row(1, "經營活動所得現金流量淨額", "100", "80", 3))
+        cf_rows.extend(_a_share_data_row(2, "投資活動耗用現金流量淨額", "-50", "-60", 3))
+        cf_rows.extend(_a_share_data_row(3, "融資活動（耗用）╱所得現金流量淨額", "-30", "-20", 3))
+        cf_rows.extend(_a_share_data_row(4, "期末的現金及現金等價物", "200", "180", 3))
+
+        note_rows = [
+            ExtractedCell(0, 0, "2", None, 4),
+            ExtractedCell(0, 1, "分部資料及收入", None, 4),
+            ExtractedCell(1, 0, "與簡明綜合收益表採用一致的方式計量", None, 4),
+            ExtractedCell(2, 0, "分部收入", None, 4),
+            ExtractedCell(2, 1, "196,458", None, 4),
+        ]
+
+        persist_raw_tables(
+            conn, report_id, run_id,
+            [
+                ExtractedTable("pymupdf", 1, 0, None, is_rows, {}),
+                ExtractedTable("pymupdf", 2, 0, None, bs_rows, {}),
+                ExtractedTable("pymupdf", 3, 0, None, cf_rows, {}),
+                ExtractedTable("pymupdf", 4, 0, None, note_rows, {}),
+            ],
+        )
+        classify_tables_for_run(conn, run_id, rules_root=Path("rules"))
+        output = tmp_path / "output.xlsx"
+        try:
+            export_statement_workbook(conn, run_id, output_path=output)
+
+            from openpyxl import load_workbook
+            wb = load_workbook(output)
+            ws = wb["现金流量表"]
+            labels = [
+                str(r[0]) for r in ws.iter_rows(min_row=2, values_only=True)
+                if r[0] is not None
+            ]
+            assert "期末的現金及現金等價物" in labels
+            assert "分部資料及收入" not in labels
+            assert "分部收入" not in labels
         finally:
             conn.close()
 

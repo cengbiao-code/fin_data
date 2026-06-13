@@ -5,6 +5,7 @@ from fin_report_extractor.extractors import (
     ExtractedCell,
     ExtractedTable,
     PdfPlumberExtractor,
+    PyMuPDFExtractor,
     TableExtractor,
 )
 
@@ -129,4 +130,126 @@ def test_pdfplumber_extractor_reads_tables_from_pdf(monkeypatch, tmp_path):
         ExtractedCell(0, 1, "金额", "[10, 2, 30, 12]", 5),
         ExtractedCell(1, 0, "资产总计", "[1, 12, 10, 20]", 5),
         ExtractedCell(1, 1, None, None, 5),
+    ]
+
+
+def test_pymupdf_extractor_keeps_healthy_text_layer_when_hk_font_detected(monkeypatch, tmp_path):
+    class FakePage:
+        def get_text(self, mode):
+            if mode == "text":
+                return "CONDENSED CONSOLIDATED STATEMENT OF FINANCIAL POSITION"
+            if mode == "dict":
+                return {
+                    "blocks": [
+                        {
+                            "type": 0,
+                            "lines": [
+                                {
+                                    "spans": [
+                                        {
+                                            "text": "Total assets",
+                                            "bbox": [10, 10, 100, 20],
+                                        },
+                                        {
+                                            "text": "100",
+                                            "bbox": [200, 10, 240, 20],
+                                        },
+                                    ]
+                                }
+                            ],
+                        }
+                    ]
+                }
+            if mode == "rawdict":
+                return {"blocks": []}
+            raise AssertionError(f"Unexpected mode: {mode}")
+
+    class FakeDocument:
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, index):
+            assert index == 0
+            return FakePage()
+
+        def close(self):
+            pass
+
+    import fin_report_extractor.extractors.pymupdf_extractor as module
+
+    monkeypatch.setattr(module.fitz, "open", lambda path: FakeDocument())
+    monkeypatch.setattr(module, "detect_big5_hk_encoding", lambda doc: True)
+    monkeypatch.setattr(
+        module,
+        "extract_big5_hk_page_text",
+        lambda page: "𣏹R��ま�",
+    )
+
+    tables = PyMuPDFExtractor().extract_tables(tmp_path / "sample.pdf")
+
+    assert tables[0].quality == {"method": "pymupdf_dict_text_clustering"}
+    assert tables[0].cells == [
+        ExtractedCell(0, 0, "Total assets", None, 1),
+        ExtractedCell(0, 1, "100", None, 1),
+    ]
+
+
+def test_pymupdf_extractor_keeps_hk_balance_sheet_continuation_text(monkeypatch, tmp_path):
+    class FakePage:
+        def get_text(self, mode):
+            if mode == "text":
+                return "\u6b0a\u76ca\n\u6b0a\u76ca\u7e3d\u984d\n\u8ca0\u50b5\n\u8ca0\u50b5\u7e3d\u984d"
+            if mode == "dict":
+                return {
+                    "blocks": [
+                        {
+                            "type": 0,
+                            "lines": [
+                                {
+                                    "spans": [
+                                        {
+                                            "text": "\u6b0a\u76ca\u7e3d\u984d",
+                                            "bbox": [10, 10, 100, 20],
+                                        },
+                                        {
+                                            "text": "1,211,627",
+                                            "bbox": [200, 10, 260, 20],
+                                        },
+                                    ]
+                                }
+                            ],
+                        }
+                    ]
+                }
+            if mode == "rawdict":
+                return {"blocks": []}
+            raise AssertionError(f"Unexpected mode: {mode}")
+
+    class FakeDocument:
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, index):
+            assert index == 0
+            return FakePage()
+
+        def close(self):
+            pass
+
+    import fin_report_extractor.extractors.pymupdf_extractor as module
+
+    monkeypatch.setattr(module.fitz, "open", lambda path: FakeDocument())
+    monkeypatch.setattr(module, "detect_big5_hk_encoding", lambda doc: True)
+    monkeypatch.setattr(
+        module,
+        "extract_big5_hk_page_text",
+        lambda page: "g*}㛓嶭8",
+    )
+
+    tables = PyMuPDFExtractor().extract_tables(tmp_path / "sample.pdf")
+
+    assert tables[0].quality == {"method": "pymupdf_dict_text_clustering"}
+    assert tables[0].cells == [
+        ExtractedCell(0, 0, "\u6b0a\u76ca\u7e3d\u984d", None, 1),
+        ExtractedCell(0, 1, "1,211,627", None, 1),
     ]

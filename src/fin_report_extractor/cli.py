@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
 from fin_report_extractor.audit_db import connect_audit_db, initialize_audit_db
 from fin_report_extractor.extraction_runs import extract_tables_for_report
-from fin_report_extractor.extractors import PdfPlumberExtractor
+from fin_report_extractor.extractors import PdfPlumberExtractor, PyMuPDFExtractor
 from fin_report_extractor.fact_extractor import extract_facts_for_run
 from fin_report_extractor.import_pdf import register_pdf
+from fin_report_extractor.pdf_font_inspector import inspect_pdf_fonts
 from fin_report_extractor.pdf_profiler import profile_pdf_for_report
+from fin_report_extractor.review_workbook import export_review_workbook
 from fin_report_extractor.statement_workbook import export_statement_workbook
 from fin_report_extractor.table_classifier import classify_tables_for_run
 from fin_report_extractor.validation_runner import validate_extraction_run
@@ -175,6 +178,69 @@ def _export_statements(args: argparse.Namespace) -> None:
     print(output_path)
 
 
+def _export_review(args: argparse.Namespace) -> None:
+    audit_path = Path(args.audit_db)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        output_path = export_review_workbook(
+            conn,
+            args.extraction_run_id,
+            output_path=args.output or None,
+        )
+    finally:
+        conn.close()
+
+    print(output_path)
+
+
+def _parse_pages(value: str | None) -> list[int] | None:
+    if value is None:
+        return None
+    pages: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_text, end_text = part.split("-", 1)
+            start = int(start_text)
+            end = int(end_text)
+            pages.extend(range(start, end + 1))
+        else:
+            pages.append(int(part))
+    return pages or None
+
+
+def _format_font_inspection_text(report) -> str:
+    lines = [
+        f"classification: {report.classification}",
+        f"producer: {report.producer or 'unknown'}",
+        "pages inspected: " + ",".join(str(page) for page in report.pages_inspected),
+        f"hk_cmap_fonts: {report.summary['hk_cmap_font_count']}",
+        f"fonts_missing_tounicode: {report.summary['fonts_missing_tounicode']}",
+        f"candidate_decoders: {report.summary['candidate_decoder_count']}",
+    ]
+    for page in report.pages:
+        if page.decoded_candidates:
+            lines.append(f"page {page.page_number} candidate_preview:")
+            for candidate in page.decoded_candidates[:3]:
+                lines.append(f"  {candidate.strategy}: {candidate.preview}")
+    return "\n".join(lines)
+
+
+def _inspect_pdf_fonts(args: argparse.Namespace) -> None:
+    report = inspect_pdf_fonts(
+        Path(args.pdf_path),
+        pages=_parse_pages(args.pages),
+    )
+    if args.json:
+        print(json.dumps(report.to_dict(), ensure_ascii=True, indent=2))
+    else:
+        print(_format_font_inspection_text(report))
+
+
 def _export_pdf_statements(args: argparse.Namespace) -> None:
     audit_path = Path(args.audit_db)
     audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,18 +268,43 @@ def _export_pdf_statements(args: argparse.Namespace) -> None:
             extractor=PdfPlumberExtractor(),
         )
         extraction_run_id = summary.extraction_run_id
+        extractor_name = "pdfplumber"
 
-        classify_tables_for_run(
-            conn,
-            extraction_run_id,
-            rules_root=Path(args.rules_root),
-        )
+        def _classify_and_export(run_id: str) -> Path:
+            classify_tables_for_run(
+                conn,
+                run_id,
+                rules_root=Path(args.rules_root),
+            )
+            return export_statement_workbook(
+                conn,
+                run_id,
+                output_path=args.output or None,
+            )
 
-        output_path = export_statement_workbook(
-            conn,
-            extraction_run_id,
-            output_path=args.output or None,
-        )
+        # HK and other borderless-table PDFs can yield 0 tables with
+        # pdfplumber. Some HKEX PDFs also yield numeric-only tables
+        # whose labels are recoverable from PyMuPDF text blocks.
+        if summary.table_count == 0:
+            summary = extract_tables_for_report(
+                conn,
+                report_id,
+                extractor=PyMuPDFExtractor(),
+            )
+            extraction_run_id = summary.extraction_run_id
+            extractor_name = "pymupdf"
+
+        try:
+            output_path = _classify_and_export(extraction_run_id)
+        except ValueError as exc:
+            if extractor_name == "pymupdf" or "报表不完整" not in str(exc):
+                raise
+            summary = extract_tables_for_report(
+                conn,
+                report_id,
+                extractor=PyMuPDFExtractor(),
+            )
+            output_path = _classify_and_export(summary.extraction_run_id)
     finally:
         conn.close()
 
@@ -273,6 +364,18 @@ def build_parser() -> argparse.ArgumentParser:
     export_statements.add_argument("--audit-db", default="data/db/audit.sqlite")
     export_statements.add_argument("--output")
     export_statements.set_defaults(func=_export_statements)
+
+    export_review = subparsers.add_parser("export-review")
+    export_review.add_argument("extraction_run_id")
+    export_review.add_argument("--audit-db", default="data/db/audit.sqlite")
+    export_review.add_argument("--output")
+    export_review.set_defaults(func=_export_review)
+
+    inspect_fonts = subparsers.add_parser("inspect-pdf-fonts")
+    inspect_fonts.add_argument("pdf_path")
+    inspect_fonts.add_argument("--pages")
+    inspect_fonts.add_argument("--json", action="store_true")
+    inspect_fonts.set_defaults(func=_inspect_pdf_fonts)
 
     export_pdf = subparsers.add_parser("export-pdf-statements")
     export_pdf.add_argument("pdf_path")

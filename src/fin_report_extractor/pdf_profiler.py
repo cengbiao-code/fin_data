@@ -7,6 +7,8 @@ from sqlite3 import Connection
 
 import fitz
 
+from fin_report_extractor.pdf_text_repair import repair_pdf_text
+
 
 @dataclass(frozen=True)
 class PdfProfile:
@@ -89,7 +91,7 @@ def profile_pdf_for_report(conn: Connection, report_id: str) -> PdfProfile:
     with fitz.open(pdf_path) as document:
         page_count = int(document.page_count)
         for index, page in enumerate(document, start=1):
-            text = page.get_text("text")
+            text = repair_pdf_text(page.get_text("text"))
             stripped_text = text.strip()
             text_char_count = len(stripped_text)
             if text_char_count > 0:
