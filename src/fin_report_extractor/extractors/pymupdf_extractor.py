@@ -75,6 +75,122 @@ def _cluster(values: list[float], tolerance: float = 3.0) -> list[list[float]]:
     return clusters
 
 
+def _merge_columns(
+    centers: list[float],
+    cells: list[ExtractedCell],
+    min_gap: float = 30.0,
+) -> tuple[list[float], list[ExtractedCell]]:
+    """Merge adjacent columns and absorb footnote-only columns.
+
+    1. Merge adjacent columns whose centers differ by less than *min_gap*.
+    2. Detect "footnote-only" columns where every non-empty cell contains
+       only a short digit string (1-4 digits, no commas). These are
+       merged into the nearest adjacent value column.
+    3. Return the new centers and remapped cells with contiguous column indices.
+    """
+    if len(centers) <= 2:
+        return centers, cells
+
+    # Track which original column indices each merged position represents.
+    # Each entry starts as a list with one original index; when positions
+    # merge, the lists combine.
+    merged_centers = list(centers)
+    merged_orig: list[list[int]] = [[j] for j in range(len(centers))]
+
+    # Step 1: merge close columns
+    i = 0
+    while i < len(merged_centers) - 1:
+        if merged_centers[i + 1] - merged_centers[i] < min_gap:
+            new_center = (merged_centers[i] + merged_centers[i + 1]) / 2
+            merged_orig[i].extend(merged_orig[i + 1])
+            del merged_orig[i + 1]
+            merged_centers[i] = new_center
+            del merged_centers[i + 1]
+            continue
+        i += 1
+
+    # Build old → new mapping: each original column index maps to its
+    # final post-merge position.
+    old_to_new = list(range(len(centers)))
+    for new_pos, orig_indices in enumerate(merged_orig):
+        for old_idx in orig_indices:
+            old_to_new[old_idx] = new_pos
+
+    # Build column-to-cells mapping for footnote analysis
+    col_cells: dict[int, list[ExtractedCell]] = {}
+    for c in cells:
+        col_cells.setdefault(c.column_index, []).append(c)
+
+    # Step 2: detect and absorb footnote-only columns
+    def _is_footnote_cell(raw: str | None) -> bool:
+        if raw is None:
+            return False
+        text = raw.strip()
+        # Footnote references are typically 1-2 digit numbers; real
+        # financial values are longer or contain formatting (commas).
+        return text.isdigit() and len(text) <= 2
+
+    footnote_cols: set[int] = set()
+    for col_idx in range(len(centers)):
+        col_cell_list = col_cells.get(col_idx, [])
+        if not col_cell_list:
+            continue
+        if all(_is_footnote_cell(c.raw_text) for c in col_cell_list):
+            footnote_cols.add(col_idx)
+
+    # Apply footnote merge: map footnote columns to nearest non-footnote
+    for col_idx in sorted(footnote_cols):
+        target = old_to_new[col_idx]
+        if target in footnote_cols:
+            best_dist = float("inf")
+            best_target = -1
+            for other in range(len(centers)):
+                if other == col_idx or other in footnote_cols:
+                    continue
+                dist = abs(centers[col_idx] - centers[other])
+                if dist < best_dist:
+                    best_dist = dist
+                    best_target = other
+            if best_target >= 0:
+                target = old_to_new[best_target]
+        old_to_new[col_idx] = target
+
+    # Compact: ensure new indices are contiguous
+    new_idx = 0
+    new_to_compact: dict[int, int] = {}
+    for old_idx in range(len(centers)):
+        new_col = old_to_new[old_idx]
+        if new_col not in new_to_compact:
+            new_to_compact[new_col] = new_idx
+            new_idx += 1
+    for old_idx in range(len(centers)):
+        old_to_new[old_idx] = new_to_compact[old_to_new[old_idx]]
+
+    # Remap cells
+    remapped = [
+        ExtractedCell(
+            row_index=c.row_index,
+            column_index=old_to_new[c.column_index],
+            raw_text=c.raw_text,
+            bbox_json=c.bbox_json,
+            page_number=c.page_number,
+        )
+        for c in cells
+    ]
+
+    # Recompute merged centers for the new column layout
+    new_centers: list[float] = []
+    for compact_idx in range(new_idx):
+        cols_in_group = [
+            i for i in range(len(centers))
+            if old_to_new[i] == compact_idx
+        ]
+        avg = sum(centers[i] for i in cols_in_group) / len(cols_in_group)
+        new_centers.append(avg)
+
+    return new_centers, remapped
+
+
 def _build_table_from_blocks(
     blocks: list[dict],
     page_number: int,
@@ -137,6 +253,8 @@ def _build_table_from_blocks(
     x_clusters = _cluster(all_x0, tolerance=15.0)
     col_centers = [sum(c) / len(c) for c in x_clusters]
 
+
+
     def _find_col(x0: float) -> int:
         """Find the column index closest to *x0*."""
         distances = [abs(x0 - c) for c in col_centers]
@@ -162,6 +280,8 @@ def _build_table_from_blocks(
                 )
             )
 
+    # Post-processing: merge close columns and absorb footnote columns.
+    col_centers, cells = _merge_columns(col_centers, cells)
     if not cells:
         return None
 

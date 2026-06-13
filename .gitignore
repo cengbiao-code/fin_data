@@ -26,3 +26,4 @@ graphify-out/
 
 # Git worktrees used for parallel issue work
 .worktrees/
+.smoke-run*/

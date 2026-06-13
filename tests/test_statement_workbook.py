@@ -286,6 +286,7 @@ class TestCompletenessCheck:
             "statement.income_statement": [
                 {"label": "期內盈利", "is_header": False},
                 {"label": "本公司權益持有人應佔每股盈利 －基本", "is_header": False},
+                {"label": "經營盈利", "is_header": False},
             ],
             "statement.cash_flow": [
                 {"label": "經營活動所得現金流量淨額", "is_header": False},
@@ -307,6 +308,7 @@ class TestCompletenessCheck:
             "statement.income_statement": [
                 {"label": "年內（虧損）╱", "is_header": False},
                 {"label": "每股基本（虧損）╱", "is_header": False},
+                {"label": "經營（虧損）", "is_header": False},
             ],
             "statement.cash_flow": [
                 {"label": "經營活動（所用）╱ 所得現金流量淨額", "is_header": False},
@@ -317,6 +319,61 @@ class TestCompletenessCheck:
         }
 
         assert _check_completeness(rows, market="hk") == []
+
+    def test_hk_exact_label_match_required_for_total_liabilities(self):
+        """權益及負債總額 should NOT satisfy 負債總額 or 權益總額 via substring."""
+        rows = {
+            "statement.balance_sheet": [
+                {"label": "資產總額", "is_header": False},
+                {"label": "權益及負債總額", "is_header": False},
+            ],
+            **_minimal_is_cf(),
+        }
+        errors = _check_completeness(rows, market="hk")
+        assert any("負債總額" in e for e in errors)
+        assert any("權益總額" in e for e in errors)
+
+    def test_us_statement_labels_are_accepted(self):
+        rows = {
+            "statement.balance_sheet": [
+                {"label": "Total assets", "is_header": False},
+                {"label": "Total liabilities", "is_header": False},
+                {"label": "Total stockholders' equity", "is_header": False},
+            ],
+            "statement.income_statement": [
+                {"label": "Net income", "is_header": False},
+                {"label": "Earnings per share", "is_header": False},
+                {"label": "Operating income", "is_header": False},
+            ],
+            "statement.cash_flow": [
+                {"label": "Net cash provided by operating activities", "is_header": False},
+                {"label": "Net cash used in investing activities", "is_header": False},
+                {"label": "Net cash provided by financing activities", "is_header": False},
+                {"label": "Cash and cash equivalents, end of period", "is_header": False},
+            ],
+        }
+        assert _check_completeness(rows, market="us") == []
+
+    def test_us_statement_equity_variant_accepted(self):
+        rows = {
+            "statement.balance_sheet": [
+                {"label": "Total assets", "is_header": False},
+                {"label": "Total liabilities", "is_header": False},
+                {"label": "Total shareholders' equity", "is_header": False},
+            ],
+            "statement.income_statement": [
+                {"label": "Net earnings", "is_header": False},
+                {"label": "EPS", "is_header": False},
+                {"label": "Income from operations", "is_header": False},
+            ],
+            "statement.cash_flow": [
+                {"label": "Net cash from operating activities", "is_header": False},
+                {"label": "Net cash used in investing activities", "is_header": False},
+                {"label": "Net cash from financing activities", "is_header": False},
+                {"label": "Cash and cash equivalents", "is_header": False},
+            ],
+        }
+        assert _check_completeness(rows, market="us") == []
 
 
 # ── helper: create full three-statement DB ───────────────────────────────────
@@ -753,6 +810,7 @@ class TestExportStatementWorkbook:
         is_rows = _is_cf_header(1)[:]
         is_rows.extend(_a_share_data_row(1, "期內盈利", "100", "90", 1))
         is_rows.extend(_a_share_data_row(2, "每股盈利", "1.00", "0.90", 1))
+        is_rows.extend(_a_share_data_row(3, "經營盈利", "50", "45", 1))
 
         bs_rows = _is_cf_header(2)[:]
         bs_rows.extend(_a_share_data_row(1, "資產總額", "500", "450", 2))

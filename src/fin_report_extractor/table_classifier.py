@@ -154,11 +154,20 @@ def _looks_like_note_table(text: str) -> bool:
         "會計政策概要",
         "財務概要",
         "五年概要",
-        "note",
         "segment information",
         "segment revenue",
     ]
-    return any(_contains_keyword(text, marker) for marker in note_markers)
+    # Check for explicit note references (US-style notes) that appear
+    # in table text indicating supplemental information rather than a
+    # primary financial statement.  Avoid bare "note" which is too
+    # generic — it matches page footers like "See accompanying notes"
+    # and "Accounts receivable, net" even in primary statements.
+    for marker in note_markers:
+        if _contains_keyword(text, marker):
+            return True
+    if _contains_keyword(text, "notes to") or _contains_keyword(text, "note to"):
+        return True
+    return False
 
 
 def _classify_raw_table(

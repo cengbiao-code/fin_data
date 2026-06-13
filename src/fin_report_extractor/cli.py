@@ -178,6 +178,26 @@ def _export_statements(args: argparse.Namespace) -> None:
     print(output_path)
 
 
+def _publish_trusted(args: argparse.Namespace) -> None:
+    from fin_report_extractor.trusted_publish import publish_trusted_version
+
+    audit_path = Path(args.audit_db)
+
+    conn = connect_audit_db(audit_path)
+    try:
+        initialize_audit_db(conn)
+        version_id = publish_trusted_version(
+            conn,
+            Path(args.analytics_db),
+            args.extraction_run_id,
+            notes=args.notes,
+        )
+    finally:
+        conn.close()
+
+    print(version_id)
+
+
 def _export_review(args: argparse.Namespace) -> None:
     audit_path = Path(args.audit_db)
 
@@ -370,6 +390,13 @@ def build_parser() -> argparse.ArgumentParser:
     export_review.add_argument("--audit-db", default="data/db/audit.sqlite")
     export_review.add_argument("--output")
     export_review.set_defaults(func=_export_review)
+
+    publish_trusted = subparsers.add_parser("publish-trusted")
+    publish_trusted.add_argument("extraction_run_id")
+    publish_trusted.add_argument("--audit-db", default="data/db/audit.sqlite")
+    publish_trusted.add_argument("--analytics-db", default="data/db/analytics.duckdb")
+    publish_trusted.add_argument("--notes")
+    publish_trusted.set_defaults(func=_publish_trusted)
 
     inspect_fonts = subparsers.add_parser("inspect-pdf-fonts")
     inspect_fonts.add_argument("pdf_path")

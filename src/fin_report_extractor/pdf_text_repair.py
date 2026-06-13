@@ -166,7 +166,7 @@ def _looks_like_cns1_cid_char(char: str) -> bool:
         return False
     if "一" <= char <= "鿿":
         return False
-    if char in "\n\r\t ()[]{}.,:;+-/%–—":
+    if char in "\n\r\t ()[]{}.,:;+-/%–—╱":
         return False
     return True
 
@@ -195,6 +195,32 @@ def _better_repair(original: str, candidate: str | None) -> str:
     return original
 
 
+_CMAP_RESIDUE_CORRECTIONS: dict[str, str] = {
+    "蜎": "及",
+    "╱": "/",
+    "艴": "'",
+}
+
+
+def _fix_cmap_residue(text: str) -> str:
+    """Apply known CMap residue character corrections.
+
+    Some HK PDFs have CMap errors where characters map to wrong but valid
+    CJK codepoints (e.g. 蜎 instead of 及). The CNS1 CMap repair path
+    (:func:`_decode_cns1_codepoint_text`) skips characters in the CJK
+    Unified Ideographs range, so these residue errors need a
+    dictionary-based correction as a final cleanup step.
+    """
+    if not text:
+        return text
+    chars = list(text)
+    for i, char in enumerate(chars):
+        replacement = _CMAP_RESIDUE_CORRECTIONS.get(char)
+        if replacement is not None:
+            chars[i] = replacement
+    return "".join(chars)
+
+
 def repair_pdf_text(text: str) -> str:
     """Repair common HK PDF text extraction encodings.
 
@@ -204,4 +230,5 @@ def repair_pdf_text(text: str) -> str:
     repaired = _better_repair(text, _decode_latin1_bytes_as_big5(text))
     repaired = _better_repair(repaired, _decode_pdfplumber_cid_tokens(repaired))
     repaired = _better_repair(repaired, _decode_cns1_codepoint_text(repaired))
+    repaired = _fix_cmap_residue(repaired)
     return repaired

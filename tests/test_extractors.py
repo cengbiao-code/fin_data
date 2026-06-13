@@ -63,18 +63,12 @@ def test_table_extractor_base_method_requires_adapter_implementation(tmp_path):
         raise AssertionError("Expected TableExtractor.extract_tables to be abstract.")
 
 
-def test_stub_extractors_fail_clearly_until_real_extraction_is_implemented():
+def test_camelot_extractor_returns_empty_list_when_not_installed():
+    """CamelotExtractor degrades gracefully when camelot-py is not installed."""
     extractor = CamelotExtractor()
-
     assert extractor.extractor_name == "camelot"
-    try:
-        extractor.extract_tables(Path("sample.pdf"))
-    except NotImplementedError as exc:
-        message = str(exc)
-        assert "camelot" in message.lower()
-        assert "implemented after" in message
-    else:
-        raise AssertionError("Expected camelot stub to fail clearly.")
+    tables = extractor.extract_tables(Path("nonexistent.pdf"))
+    assert tables == []
 
 
 def test_pdfplumber_extractor_reads_tables_from_pdf(monkeypatch, tmp_path):
@@ -253,3 +247,67 @@ def test_pymupdf_extractor_keeps_hk_balance_sheet_continuation_text(monkeypatch,
         ExtractedCell(0, 0, "\u6b0a\u76ca\u7e3d\u984d", None, 1),
         ExtractedCell(0, 1, "1,211,627", None, 1),
     ]
+
+
+def test_merge_columns_merges_close_adjacent_columns():
+    from fin_report_extractor.extractors.pymupdf_extractor import _merge_columns
+
+    centers = [10.0, 35.0, 200.0, 225.0]
+    cells = [
+        ExtractedCell(0, 0, "A", None, 1),
+        ExtractedCell(0, 1, "B", None, 1),
+        ExtractedCell(0, 2, "100", None, 1),
+        ExtractedCell(0, 3, "200", None, 1),
+    ]
+
+    new_centers, new_cells = _merge_columns(centers, cells, min_gap=30.0)
+
+    # 10+35 (gap=25 < 30) and 200+225 (gap=25 < 30) both merge
+    assert len(new_centers) == 2
+    assert len(set(c.column_index for c in new_cells)) == 2
+
+
+def test_merge_columns_does_not_merge_well_separated_columns():
+    from fin_report_extractor.extractors.pymupdf_extractor import _merge_columns
+
+    centers = [10.0, 200.0, 400.0]
+    cells = [
+        ExtractedCell(0, 0, "A", None, 1),
+        ExtractedCell(0, 1, "100", None, 1),
+        ExtractedCell(0, 2, "200", None, 1),
+    ]
+
+    new_centers, new_cells = _merge_columns(centers, cells, min_gap=30.0)
+    assert len(new_centers) == 3
+
+
+def test_merge_columns_absorbs_footnote_columns():
+    from fin_report_extractor.extractors.pymupdf_extractor import _merge_columns
+
+    # Column 1 is footnote (short digit); placed close to value column (col 2)
+    centers = [10.0, 100.0, 130.0]
+    cells = [
+        ExtractedCell(0, 0, "Total assets", None, 1),
+        ExtractedCell(0, 1, "1", None, 1),
+        ExtractedCell(1, 0, "Total liabilities", None, 1),
+        ExtractedCell(1, 1, "2", None, 1),
+        ExtractedCell(1, 2, "500,000", None, 1),
+    ]
+
+    new_centers, new_cells = _merge_columns(centers, cells, min_gap=30.0)
+
+    # Footnote column (col 1 at 100) is closer to value column (col 2 at 130)
+    # than label column (col 0 at 10), so it should merge into the value column
+    col_indices = set(c.column_index for c in new_cells if c.raw_text == "1")
+    value_indices = set(c.column_index for c in new_cells if c.raw_text == "500,000")
+    assert col_indices == value_indices, "Footnote column should merge into nearest non-label column"
+
+
+def test_merge_columns_two_or_fewer_columns_unchanged():
+    from fin_report_extractor.extractors.pymupdf_extractor import _merge_columns
+
+    centers = [10.0, 200.0]
+    cells = [ExtractedCell(0, 0, "A", None, 1), ExtractedCell(0, 1, "B", None, 1)]
+    new_centers, new_cells = _merge_columns(centers, cells)
+    assert new_centers == centers
+    assert new_cells == cells
